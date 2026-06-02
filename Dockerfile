@@ -1,18 +1,23 @@
 # syntax=docker/dockerfile:1
 
-FROM node:22-bookworm-slim AS deps
+FROM node:22-bookworm-slim AS base
 WORKDIR /app
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates openssl \
+  && rm -rf /var/lib/apt/lists/*
+
+FROM base AS deps
 COPY package.json package-lock.json* ./
 RUN npm ci
 
-FROM node:22-bookworm-slim AS builder
+FROM base AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:22-bookworm-slim AS runner
+FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
