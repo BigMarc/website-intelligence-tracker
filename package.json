@@ -1,0 +1,53 @@
+{
+  "name": "website-intelligence-tracker",
+  "version": "0.1.0",
+  "private": false,
+  "description": "A Railway-hosted open-source dashboard for tracking public website intelligence snapshots over time.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:seed": "tsx prisma/seed.ts",
+    "scrape:all": "tsx scripts/scrape-all.ts",
+    "scrape:domain": "tsx scripts/scrape-domain.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0",
+    "@radix-ui/react-slot": "^1.2.4",
+    "cheerio": "^1.1.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.552.0",
+    "next": "^15.5.6",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "recharts": "^3.3.0",
+    "tailwind-merge": "^3.3.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.10",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.10",
+    "prisma": "^6.19.0",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
+  }
+}

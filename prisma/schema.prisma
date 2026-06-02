@@ -1,0 +1,238 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SnapshotStatus {
+  success
+  partial
+  no_public_data
+  blocked
+  login_wall
+  captcha
+  parser_error
+  network_error
+}
+
+enum TrafficChannel {
+  direct
+  referrals
+  organic_search
+  paid_search
+  social
+  email
+  display_ads
+  other
+}
+
+enum ScrapeRunStatus {
+  running
+  success
+  partial
+  failed
+}
+
+enum AlertType {
+  traffic_increased_percent
+  traffic_decreased_percent
+  global_rank_improved_positions
+  global_rank_declined_positions
+  no_public_data_consecutive_runs
+  collector_blocked
+  parser_errors_detected
+}
+
+enum AlertDelivery {
+  dashboard
+  telegram
+}
+
+enum AlertEventStatus {
+  open
+  sent
+  resolved
+}
+
+model TrackedDomain {
+  id                  String                     @id @default(cuid())
+  domain              String                     @unique
+  displayName         String?
+  isActive            Boolean                    @default(true)
+  notes               String?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  categoryAssignments DomainCategoryAssignment[]
+  snapshots           DomainSnapshot[]
+  runItems            ScrapeRunItem[]
+  alertRules          AlertRule[]
+  alertEvents         AlertEvent[]
+
+  @@index([isActive])
+  @@index([domain])
+}
+
+model DomainCategory {
+  id          String                     @id @default(cuid())
+  name        String                     @unique
+  slug        String                     @unique
+  createdAt   DateTime                   @default(now())
+  assignments DomainCategoryAssignment[]
+}
+
+model DomainCategoryAssignment {
+  id               String         @id @default(cuid())
+  trackedDomainId  String
+  domainCategoryId String
+  trackedDomain    TrackedDomain  @relation(fields: [trackedDomainId], references: [id], onDelete: Cascade)
+  category         DomainCategory @relation(fields: [domainCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([trackedDomainId, domainCategoryId])
+  @@index([domainCategoryId])
+}
+
+model DomainSnapshot {
+  id                          String                   @id @default(cuid())
+  trackedDomainId             String
+  provider                    String
+  snapshotDate                DateTime                 @db.Date
+  collectedAt                 DateTime
+  sourceUrl                   String
+  status                      SnapshotStatus
+  parserVersion               String
+  estimatedMonthlyVisits      Float?
+  globalRank                  Int?
+  countryRank                 Int?
+  categoryRank                Int?
+  bounceRate                  Float?
+  pagesPerVisit               Float?
+  averageVisitDurationSeconds Int?
+  warningsJson                Json
+  rawJson                     Json?
+  createdAt                   DateTime                 @default(now())
+  trackedDomain               TrackedDomain            @relation(fields: [trackedDomainId], references: [id], onDelete: Cascade)
+  trafficChannelSnapshots     TrafficChannelSnapshot[]
+  countrySnapshots            CountrySnapshot[]
+
+  @@unique([trackedDomainId, provider, snapshotDate])
+  @@index([trackedDomainId, collectedAt])
+  @@index([provider, status])
+}
+
+model TrafficChannelSnapshot {
+  id               String         @id @default(cuid())
+  domainSnapshotId String
+  channel          TrafficChannel
+  sharePercent     Float
+  domainSnapshot   DomainSnapshot @relation(fields: [domainSnapshotId], references: [id], onDelete: Cascade)
+
+  @@unique([domainSnapshotId, channel])
+}
+
+model CountrySnapshot {
+  id               String         @id @default(cuid())
+  domainSnapshotId String
+  countryCode      String?
+  countryName      String
+  sharePercent     Float?
+  domainSnapshot   DomainSnapshot @relation(fields: [domainSnapshotId], references: [id], onDelete: Cascade)
+
+  @@index([countryCode])
+  @@index([domainSnapshotId])
+}
+
+model ScrapeRun {
+  id               String          @id @default(cuid())
+  startedAt        DateTime        @default(now())
+  finishedAt       DateTime?
+  status           ScrapeRunStatus @default(running)
+  domainsAttempted Int             @default(0)
+  domainsSucceeded Int             @default(0)
+  domainsPartial   Int             @default(0)
+  domainsBlocked   Int             @default(0)
+  domainsFailed    Int             @default(0)
+  createdAt        DateTime        @default(now())
+  items            ScrapeRunItem[]
+
+  @@index([startedAt])
+  @@index([status])
+}
+
+model ScrapeRunItem {
+  id              String         @id @default(cuid())
+  scrapeRunId     String
+  trackedDomainId String
+  status          SnapshotStatus
+  errorMessage    String?
+  durationMs      Int
+  createdAt       DateTime       @default(now())
+  scrapeRun       ScrapeRun      @relation(fields: [scrapeRunId], references: [id], onDelete: Cascade)
+  trackedDomain   TrackedDomain  @relation(fields: [trackedDomainId], references: [id], onDelete: Cascade)
+
+  @@index([scrapeRunId])
+  @@index([trackedDomainId])
+  @@index([status])
+}
+
+model SearchTerm {
+  id        String                   @id @default(cuid())
+  term      String                   @unique
+  notes     String?
+  createdAt DateTime                 @default(now())
+  snapshots SearchInterestSnapshot[]
+}
+
+model SearchInterestSnapshot {
+  id           String     @id @default(cuid())
+  searchTermId String
+  geo          String     @default("worldwide")
+  date         DateTime   @db.Date
+  interest     Int
+  source       String     @default("manual_csv")
+  createdAt    DateTime   @default(now())
+  searchTerm   SearchTerm @relation(fields: [searchTermId], references: [id], onDelete: Cascade)
+
+  @@unique([searchTermId, geo, date])
+  @@index([date])
+}
+
+model AlertRule {
+  id              String         @id @default(cuid())
+  name            String
+  type            AlertType
+  trackedDomainId String?
+  thresholdFloat  Float?
+  thresholdInt    Int?
+  consecutiveRuns Int?
+  delivery        AlertDelivery  @default(dashboard)
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  trackedDomain   TrackedDomain? @relation(fields: [trackedDomainId], references: [id], onDelete: Cascade)
+  events          AlertEvent[]
+
+  @@index([type])
+  @@index([isActive])
+  @@index([trackedDomainId])
+}
+
+model AlertEvent {
+  id              String           @id @default(cuid())
+  alertRuleId     String?
+  trackedDomainId String?
+  type            AlertType
+  status          AlertEventStatus @default(open)
+  message         String
+  payloadJson     Json?
+  deliveredAt     DateTime?
+  createdAt       DateTime         @default(now())
+  alertRule       AlertRule?       @relation(fields: [alertRuleId], references: [id], onDelete: SetNull)
+  trackedDomain   TrackedDomain?   @relation(fields: [trackedDomainId], references: [id], onDelete: Cascade)
+
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
