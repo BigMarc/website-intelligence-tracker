@@ -5,6 +5,7 @@ import {
   sessionCookieOptions,
   verifyAdminCredentials
 } from "@/lib/auth";
+import { env } from "@/lib/env";
 
 const attempts = new Map<string, { count: number; resetAt: number }>();
 const WINDOW_MS = 15 * 60 * 1000;
@@ -39,20 +40,20 @@ export async function POST(request: NextRequest) {
   const next = String(form.get("next") ?? "/overview");
 
   if (isRateLimited(key)) {
-    const url = new URL("/login", request.url);
+    const url = new URL("/login", env.appBaseUrl);
     url.searchParams.set("error", "Too many attempts. Try again later.");
     return NextResponse.redirect(url, { status: 303 });
   }
 
   if (!verifyAdminCredentials(username, password)) {
     recordFailedAttempt(key);
-    const url = new URL("/login", request.url);
+    const url = new URL("/login", env.appBaseUrl);
     url.searchParams.set("error", "Invalid credentials.");
     return NextResponse.redirect(url, { status: 303 });
   }
 
   attempts.delete(key);
-  const response = NextResponse.redirect(new URL(next.startsWith("/") ? next : "/overview", request.url), {
+  const response = NextResponse.redirect(new URL(next.startsWith("/") ? next : "/overview", env.appBaseUrl), {
     status: 303
   });
   response.cookies.set(SESSION_COOKIE_NAME, await createSessionCookieValue(username), sessionCookieOptions());
