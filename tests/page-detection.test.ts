@@ -7,6 +7,15 @@ describe("public page access detection", () => {
     expect(detectPublicPageAccess({ statusCode: 403 }).status).toBe("blocked");
   });
 
+  it("detects AWS WAF challenge pages", () => {
+    expect(
+      detectPublicPageAccess({
+        statusCode: 202,
+        html: "<script>window.awsWafCookieDomainList=[]; window.gokuProps={}</script>"
+      }).status
+    ).toBe("blocked");
+  });
+
   it("detects login walls and CAPTCHA pages", () => {
     expect(detectPublicPageAccess({ html: "Log in to continue" }).status).toBe("login_wall");
     expect(detectPublicPageAccess({ html: "Please verify you are human captcha" }).status).toBe("captcha");

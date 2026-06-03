@@ -3,6 +3,7 @@ import { env, hasDatabaseUrl } from "@/lib/env";
 import { getSnapshotDate } from "@/lib/metrics";
 import { prisma } from "@/lib/prisma";
 import { structuredLog } from "@/lib/logger";
+import { SimilarwebApiProvider } from "@/providers/similarweb-api";
 import { similarwebPublicProvider } from "@/providers/similarweb-public";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { evaluateAlertsForSnapshot } from "@/lib/alerts";
@@ -117,8 +118,13 @@ function applyStatusCount(counts: {
   else counts.domainsFailed += 1;
 }
 
-export async function collectStandaloneDomain(domain: string, provider: WebsiteIntelligenceProvider = similarwebPublicProvider) {
-  return provider.collectDomainSnapshot({ domain, collectedAt: new Date() });
+export async function collectStandaloneDomain(domain: string, provider?: WebsiteIntelligenceProvider) {
+  return (provider ?? defaultProvider()).collectDomainSnapshot({ domain, collectedAt: new Date() });
+}
+
+function defaultProvider() {
+  if (env.similarwebApiEnabled && env.similarwebApiKey) return new SimilarwebApiProvider();
+  return similarwebPublicProvider;
 }
 
 async function scrapeDomainInRun(input: {
@@ -187,7 +193,7 @@ export async function scrapeOneTrackedDomain(input: {
   force?: boolean;
 }) {
   if (!hasDatabaseUrl()) throw new Error("DATABASE_URL is required to persist scraper results.");
-  const provider = input.provider ?? similarwebPublicProvider;
+  const provider = input.provider ?? defaultProvider();
   const domain = await prisma.trackedDomain.findUniqueOrThrow({ where: { id: input.trackedDomainId } });
   const run = await prisma.scrapeRun.create({ data: { status: "running", domainsAttempted: 1 } });
   const status = await scrapeDomainInRun({
@@ -215,7 +221,7 @@ export async function scrapeAllTrackedDomains(input: {
   force?: boolean;
 } = {}) {
   if (!hasDatabaseUrl()) throw new Error("DATABASE_URL is required to persist scraper results.");
-  const provider = input.provider ?? similarwebPublicProvider;
+  const provider = input.provider ?? defaultProvider();
   const domains = await prisma.trackedDomain.findMany({ where: { isActive: true }, orderBy: { domain: "asc" } });
   const run = await prisma.scrapeRun.create({
     data: { status: "running", domainsAttempted: domains.length }

@@ -1,9 +1,12 @@
 import { env } from "@/lib/env";
 import type { ProviderSnapshotResult, WebsiteIntelligenceProvider } from "@/providers/types";
 import { checkSimilarwebRobots, USER_AGENT } from "./robots";
-import { parseSimilarwebHtml, SIMILARWEB_PUBLIC_PARSER_VERSION } from "./parser";
+import { parseSimilarwebDataApiJson, parseSimilarwebHtml, SIMILARWEB_PUBLIC_PARSER_VERSION } from "./parser";
 
 const SIMILARWEB_ORIGIN = "https://www.similarweb.com";
+const SIMILARWEB_DATA_ORIGIN = "https://data.similarweb.com";
+const DATA_USER_AGENT = "Mozilla/5.0 (compatible; WebsiteIntelligenceTracker/1.0; +weekly public-data research tool)";
+const dataBlockStatusCodes = new Set([403, 429]);
 
 function sourcePath(domain: string) {
   return `/website/${domain}/`;
@@ -11,6 +14,10 @@ function sourcePath(domain: string) {
 
 function sourceUrl(domain: string) {
   return `${SIMILARWEB_ORIGIN}${sourcePath(domain)}`;
+}
+
+function dataUrl(domain: string) {
+  return `${SIMILARWEB_DATA_ORIGIN}/api/v1/data?domain=${encodeURIComponent(domain)}`;
 }
 
 function failureResult(input: {
@@ -62,6 +69,53 @@ export class SimilarwebPublicProvider implements WebsiteIntelligenceProvider {
 
     let lastError: string | null = null;
     for (let attempt = 0; attempt <= env.maxRetries; attempt += 1) {
+      const dataController = new AbortController();
+      const dataTimeout = setTimeout(() => dataController.abort(), env.requestTimeoutMs);
+      try {
+        const response = await fetch(dataUrl(input.domain), {
+          headers: {
+            "User-Agent": DATA_USER_AGENT,
+            Accept: "application/json",
+            "Accept-Language": "en-US,en;q=0.9"
+          },
+          signal: dataController.signal
+        });
+        if (response.ok) {
+          const parsed = parseSimilarwebDataApiJson({
+            json: await response.json(),
+            domain: input.domain,
+            sourceUrl: dataUrl(input.domain),
+            collectedAt: input.collectedAt,
+            statusCode: response.status
+          });
+          if (parsed.status !== "no_public_data" && parsed.status !== "parser_error") {
+            return {
+              ...parsed,
+              warnings: robots.warning ? [robots.warning, ...parsed.warnings] : parsed.warnings
+            };
+          }
+          lastError = parsed.warnings.join(" ");
+        } else if (dataBlockStatusCodes.has(response.status)) {
+          return {
+            status: "blocked",
+            sourceUrl: dataUrl(input.domain),
+            collectedAt: input.collectedAt.toISOString(),
+            parserVersion: SIMILARWEB_PUBLIC_PARSER_VERSION,
+            metrics: {},
+            warnings: [
+              robots.warning,
+              `Similarweb public data response returned HTTP ${response.status}.`
+            ].filter((warning): warning is string => Boolean(warning))
+          };
+        } else {
+          lastError = `Similarweb public data response returned HTTP ${response.status}.`;
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : "unknown data response error";
+      } finally {
+        clearTimeout(dataTimeout);
+      }
+
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), env.requestTimeoutMs);
       try {
@@ -82,7 +136,9 @@ export class SimilarwebPublicProvider implements WebsiteIntelligenceProvider {
         });
         return {
           ...parsed,
-          warnings: robots.warning ? [robots.warning, ...parsed.warnings] : parsed.warnings
+          warnings: [robots.warning, lastError, ...parsed.warnings].filter((warning): warning is string =>
+            Boolean(warning)
+          )
         };
       } catch (error) {
         lastError = error instanceof Error ? error.message : "unknown network error";

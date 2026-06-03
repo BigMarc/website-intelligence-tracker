@@ -1,0 +1,32 @@
+{
+  "Version": 1,
+  "SiteName": "example.com",
+  "TopCountryShares": [
+    { "Country": 840, "CountryCode": "US", "Value": 0.422 },
+    { "Country": 826, "CountryCode": "GB", "Value": 0.084 }
+  ],
+  "Engagments": {
+    "BounceRate": "0.5422",
+    "PagePerVisit": "3.4",
+    "Visits": "1200000",
+    "TimeOnSite": "221"
+  },
+  "EstimatedMonthlyVisits": {
+    "2026-02-01": 1100000,
+    "2026-03-01": 1150000,
+    "2026-04-01": 1200000
+  },
+  "GlobalRank": { "Rank": 1245 },
+  "CountryRank": { "Country": 840, "CountryCode": "US", "Rank": 234 },
+  "CategoryRank": { "Rank": "12", "Category": "Reference" },
+  "TrafficSources": {
+    "Direct": 0.442,
+    "SearchOrganic": 0.321,
+    "SocialOrganic": 0.075,
+    "SocialPaid": 0.025,
+    "Mail": 0.01,
+    "Referrals": 0.1,
+    "DisplayAds": 0.027
+  },
+  "SnapshotDate": "2026-04-01"
+}

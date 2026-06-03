@@ -131,19 +131,26 @@ Seeds categories and domains from `lib/tracked-catalog.ts`, including creator di
 
 ## Similarweb Public Collector
 
-The collector uses:
+The collector uses public Similarweb web/data responses for:
 
 ```text
+https://data.similarweb.com/api/v1/data?domain={domain}
 https://www.similarweb.com/website/{domain}/
 ```
 
-It first inspects `robots.txt`, then performs a normal HTTP request with:
+It first inspects `robots.txt` for the public website page, then requests the public JSON data response with an identifying compatible user agent:
+
+```text
+Mozilla/5.0 (compatible; WebsiteIntelligenceTracker/1.0; +weekly public-data research tool)
+```
+
+If the public data response is unavailable, it falls back to the public website page with:
 
 ```text
 WebsiteIntelligenceTracker/1.0 (+weekly public-data research tool)
 ```
 
-It parses static public HTML and embedded public structured data. It records `blocked`, `login_wall`, `captcha`, `network_error`, `parser_error`, `no_public_data`, `partial`, or `success` without attempting circumvention.
+It parses public JSON data, static public HTML, and embedded public structured data. It records `blocked`, `login_wall`, `captcha`, `network_error`, `parser_error`, `no_public_data`, `partial`, or `success` without attempting circumvention.
 
 The collector never:
 

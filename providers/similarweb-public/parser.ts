@@ -4,6 +4,7 @@ import { parseDurationToSeconds, parseMetricNumber, parsePercent, parseRank } fr
 import type { ProviderSnapshotResult, ProviderTrafficChannel } from "@/providers/types";
 
 export const SIMILARWEB_PUBLIC_PARSER_VERSION = "similarweb-public-static-v1";
+export const SIMILARWEB_PUBLIC_DATA_PARSER_VERSION = "similarweb-public-data-v1";
 
 const channelLabels: Array<[ProviderTrafficChannel, RegExp]> = [
   ["direct", /direct/i],
@@ -30,6 +31,8 @@ const countryCodeHints: Record<string, string> = {
   Mexico: "MX"
 };
 
+const regionDisplayNames = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames(["en"], { type: "region" }) : null;
+
 function normalizeBodyText(html: string) {
   const $ = cheerio.load(html);
   $("script, style, noscript, svg").remove();
@@ -51,6 +54,79 @@ function metricFromJson(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") return parseMetricNumber(value);
   return null;
+}
+
+function objectFromJson(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function percentFromJsonShare(value: unknown): number | null {
+  const parsed = metricFromJson(value);
+  if (parsed === null) return null;
+  return Number((parsed <= 1 ? parsed * 100 : parsed).toFixed(4));
+}
+
+function latestMonthlyVisitValue(value: unknown) {
+  const monthlyVisits = objectFromJson(value);
+  if (!monthlyVisits) return null;
+
+  return Object.entries(monthlyVisits)
+    .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+    .reduce<number | null>((latest, [, visitValue]) => metricFromJson(visitValue) ?? latest, null);
+}
+
+function countryNameFromCode(countryCode: string) {
+  return regionDisplayNames?.of(countryCode) ?? countryCode;
+}
+
+function parseRankObject(value: unknown) {
+  const record = objectFromJson(value);
+  return record ? metricFromJson(record.Rank) : null;
+}
+
+function channelFromDataApi(source: Record<string, unknown>, key: string) {
+  return percentFromJsonShare(source[key]);
+}
+
+function parseDataApiTrafficChannels(value: unknown) {
+  const source = objectFromJson(value);
+  if (!source) return [];
+
+  const socialShares = [channelFromDataApi(source, "SocialOrganic"), channelFromDataApi(source, "SocialPaid")].filter(
+    (share): share is number => share !== null
+  );
+  const channels = [
+    { channel: "direct" as const, sharePercent: channelFromDataApi(source, "Direct") },
+    { channel: "referrals" as const, sharePercent: channelFromDataApi(source, "Referrals") },
+    { channel: "organic_search" as const, sharePercent: channelFromDataApi(source, "SearchOrganic") },
+    { channel: "paid_search" as const, sharePercent: channelFromDataApi(source, "SearchPaid") },
+    { channel: "social" as const, sharePercent: socialShares.length ? socialShares.reduce((sum, share) => sum + share, 0) : null },
+    { channel: "email" as const, sharePercent: channelFromDataApi(source, "Mail") },
+    { channel: "display_ads" as const, sharePercent: channelFromDataApi(source, "DisplayAds") }
+  ];
+
+  return channels.filter((channel) => channel.sharePercent !== null && channel.sharePercent > 0) as NonNullable<
+    ProviderSnapshotResult["trafficChannels"]
+  >;
+}
+
+function parseDataApiTopCountries(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const countries: NonNullable<ProviderSnapshotResult["topCountries"]> = [];
+
+  for (const entry of value) {
+    const record = objectFromJson(entry);
+    const countryCode = typeof record?.CountryCode === "string" ? record.CountryCode : null;
+    const sharePercent = percentFromJsonShare(record?.Value);
+    if (!countryCode || sharePercent === null) continue;
+    countries.push({
+      countryName: countryNameFromCode(countryCode),
+      countryCode,
+      sharePercent
+    });
+  }
+
+  return countries.slice(0, 10);
 }
 
 function flattenJson(value: unknown, path: string[] = [], out: Array<{ path: string; value: unknown }> = []) {
@@ -213,6 +289,82 @@ export function parseSimilarwebHtml(input: {
       foundMetricCount,
       textLength: text.length,
       embeddedJsonBlocks: jsonBlocks.length
+    }
+  };
+}
+
+export function parseSimilarwebDataApiJson(input: {
+  json: unknown;
+  domain: string;
+  sourceUrl: string;
+  collectedAt: Date;
+  statusCode?: number;
+}): ProviderSnapshotResult {
+  const base = {
+    sourceUrl: input.sourceUrl,
+    collectedAt: input.collectedAt.toISOString(),
+    parserVersion: SIMILARWEB_PUBLIC_DATA_PARSER_VERSION,
+    warnings: [] as string[]
+  };
+
+  if (input.statusCode && input.statusCode >= 400) {
+    return {
+      ...base,
+      status: input.statusCode === 429 ? "blocked" : "network_error",
+      metrics: {},
+      warnings: [`Similarweb public data response returned HTTP ${input.statusCode}.`]
+    };
+  }
+
+  const json = objectFromJson(input.json);
+  if (!json) {
+    return {
+      ...base,
+      status: "parser_error",
+      metrics: {},
+      warnings: ["Similarweb public data response was not a JSON object."]
+    };
+  }
+
+  const engagements = objectFromJson(json.Engagments);
+  const estimatedMonthlyVisits = latestMonthlyVisitValue(json.EstimatedMonthlyVisits) ?? metricFromJson(engagements?.Visits);
+  const globalRank = parseRankObject(json.GlobalRank);
+  const countryRank = parseRankObject(json.CountryRank);
+  const categoryRank = parseRankObject(json.CategoryRank) ?? parseRankObject(json.GlobalCategoryRank);
+  const bounceRate = percentFromJsonShare(engagements?.BounceRate);
+  const pagesPerVisit = metricFromJson(engagements?.PagePerVisit);
+  const averageVisitDurationSeconds = metricFromJson(engagements?.TimeOnSite);
+  const trafficChannels = parseDataApiTrafficChannels(json.TrafficSources);
+  const topCountries = parseDataApiTopCountries(json.TopCountryShares);
+  const metrics = {
+    estimatedMonthlyVisits,
+    globalRank,
+    countryRank,
+    categoryRank,
+    bounceRate,
+    pagesPerVisit,
+    averageVisitDurationSeconds
+  };
+  const foundMetricCount = Object.values(metrics).filter((value) => value !== null && value !== undefined).length;
+  const warnings = [...base.warnings];
+  if (foundMetricCount === 0) warnings.push("No public metric values were found in Similarweb data response.");
+  if (trafficChannels.length === 0) warnings.push("No public traffic-channel values were found.");
+  if (topCountries.length === 0) warnings.push("No public country-share values were found.");
+
+  const status = foundMetricCount === 0 ? "no_public_data" : foundMetricCount >= 3 ? "success" : "partial";
+
+  return {
+    ...base,
+    status,
+    metrics,
+    trafficChannels,
+    topCountries,
+    warnings,
+    raw: {
+      source: "similarweb-public-data",
+      foundMetricCount,
+      siteName: typeof json.SiteName === "string" ? json.SiteName : input.domain,
+      snapshotDate: typeof json.SnapshotDate === "string" ? json.SnapshotDate : null
     }
   };
 }

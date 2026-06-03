@@ -7,7 +7,10 @@ const blockedPatterns = [
   /request blocked/i,
   /temporarily unavailable/i,
   /too many requests/i,
-  /forbidden/i
+  /forbidden/i,
+  /aws\s*waf/i,
+  /gokuProps/i,
+  /awsWafCookieDomainList/i
 ];
 
 export function detectPublicPageAccess(input: { html?: string; statusCode?: number; url?: string }): {
@@ -19,6 +22,9 @@ export function detectPublicPageAccess(input: { html?: string; statusCode?: numb
     return { status: "blocked", reason: `HTTP ${input.statusCode}` };
   }
   if (input.statusCode === 429) return { status: "blocked", reason: "HTTP 429 rate limited" };
+  if (input.statusCode === 202 && (/gokuProps/i.test(html) || /awsWafCookieDomainList/i.test(html))) {
+    return { status: "blocked", reason: "AWS WAF challenge detected" };
+  }
 
   if (captchaPatterns.some((pattern) => pattern.test(html))) {
     return { status: "captcha", reason: "CAPTCHA or human verification detected" };
