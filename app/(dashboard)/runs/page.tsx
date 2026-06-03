@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ScrapeAllButton } from "@/components/ScrapeAllButton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { getRunsData } from "@/lib/dashboard-data";
@@ -13,6 +14,7 @@ export default async function RunsPage() {
         <h1 className="text-2xl font-semibold">Scrape Runs</h1>
         <p className="text-sm text-muted-foreground">Run timestamps, duration, counts, and per-domain logs.</p>
       </div>
+      <ScrapeAllButton />
       <section className="overflow-hidden rounded-lg border border-border bg-card">
         <Table>
           <THead>
