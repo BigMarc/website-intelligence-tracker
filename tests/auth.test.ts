@@ -5,7 +5,9 @@ describe("authentication protection", () => {
   it("protects dashboard and mutation API routes while allowing health and login", () => {
     expect(isProtectedPath("/overview")).toBe(true);
     expect(isProtectedPath("/api/domains")).toBe(true);
+    expect(isProtectedPath("/api/public/track-domain")).toBe(false);
     expect(isProtectedPath("/api/health")).toBe(false);
+    expect(isProtectedPath("/track")).toBe(false);
     expect(isProtectedPath("/login")).toBe(false);
   });
 

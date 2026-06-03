@@ -18,6 +18,7 @@ Placeholder screenshot slots live in `docs/screenshots/`:
 - Password-protected Next.js App Router dashboard.
 - PostgreSQL persistence through Prisma.
 - Domain management with add, edit, disable, category assignment, warnings, and manual scrape actions.
+- Public custom-domain submissions at `/track` that immediately run one Similarweb public scrape without requiring a dashboard login.
 - Historical snapshots with previous-snapshot change calculations.
 - Public-data Similarweb static HTML collector with robots.txt inspection and access-barrier detection.
 - Scrape run logs with per-domain status, duration, warnings, and errors.
@@ -179,6 +180,29 @@ The collector never:
 - Rotates proxies.
 - Bypasses rate limits or robots.txt restrictions.
 
+## Public Custom Domain Tracking
+
+Open `/track` to add a custom domain without signing in. The public form:
+
+- Normalizes the submitted URL or domain.
+- Creates or re-enables the `TrackedDomain`.
+- Assigns unclassified domains to `Other`.
+- Immediately runs one Similarweb public scrape with a force refresh for the current snapshot date.
+- Leaves the domain active so the Sunday `0 8 * * 0` cron worker includes it in the weekly tracker.
+
+The matching public API route is:
+
+```bash
+POST /api/public/track-domain
+Content-Type: application/json
+
+{"domain":"example.com"}
+```
+
+The response includes the domain, weekly tracker inclusion, scrape run status, latest snapshot status, public metrics when available, warnings, and rate-limit headers. It does not expose dashboard lists, credentials, private HTML, or protected API data.
+
+Public submissions are rate-limited in-process per client IP.
+
 ## Google Trends
 
 Google Trends is separate from traffic metrics. Imported values represent relative brand-search interest, not website visits.
@@ -217,6 +241,7 @@ GET /api/export/snapshots
 ## API Routes
 
 - `GET /api/health`
+- `POST /api/public/track-domain`
 - `GET /api/domains`
 - `POST /api/domains`
 - `PATCH /api/domains/:id`

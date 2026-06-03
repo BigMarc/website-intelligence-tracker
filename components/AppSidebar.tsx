@@ -6,6 +6,7 @@ import {
   Globe2,
   LayoutDashboard,
   ListChecks,
+  PlusCircle,
   Search,
   Settings,
   Tags
@@ -16,6 +17,7 @@ import { env } from "@/lib/env";
 const nav = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/websites", label: "Tracked Websites", icon: Globe2 },
+  { href: "/track", label: "Public Add Form", icon: PlusCircle },
   { href: "/categories", label: "Categories", icon: Tags },
   { href: "/comparison", label: "Website Comparison", icon: BarChart3 },
   { href: "/trends", label: "Google Trends", icon: Search },

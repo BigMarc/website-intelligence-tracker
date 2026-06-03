@@ -87,8 +87,10 @@ export function verifyAdminCredentials(username: string, password: string) {
 export function isPublicPath(pathname: string) {
   return (
     pathname === "/login" ||
+    pathname === "/track" ||
     pathname === "/api/health" ||
     pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/api/public/") ||
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.ico" ||
     pathname === "/robots.txt"
