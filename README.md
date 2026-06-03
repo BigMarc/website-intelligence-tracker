@@ -127,31 +127,7 @@ Snapshots are unique by `trackedDomainId`, `provider`, and `snapshotDate` to pre
 npm run db:seed
 ```
 
-Seeds categories:
-
-- Creator Monetization Platforms
-- Link-in-Bio Platforms
-- Social Platforms
-- Competitor Agencies
-- Other
-
-Seeds domains:
-
-- `onlyfans.com`
-- `fansly.com`
-- `fanvue.com`
-- `linktr.ee`
-- `allmylinks.com`
-- `beacons.ai`
-- `hoo.be`
-- `link.me`
-- `juicy.bio`
-- `bink.bio`
-- `instagram.com`
-- `tiktok.com`
-- `reddit.com`
-- `x.com`
-- `youtube.com`
+Seeds categories and domains from `lib/tracked-catalog.ts`, including creator discovery, link-in-bio and funnel, mainstream social, alternative viral traffic, and adult-friendly traffic platforms. Duplicate domains are upserted once and assigned to the later, more specific category in the catalog.
 
 ## Similarweb Public Collector
 

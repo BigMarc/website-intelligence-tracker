@@ -1,34 +1,20 @@
 import { PrismaClient } from "@prisma/client";
-import { getDisplayNameFromDomain } from "../lib/domains";
+import { getDisplayNameFromDomain, normalizeDomain } from "../lib/domains";
+import { seededCategoryDomains } from "../lib/tracked-catalog";
 import { toSlug } from "../lib/utils";
 
 const prisma = new PrismaClient();
 
-const categoryDomains = {
-  "Creator Monetization Platforms": ["onlyfans.com", "fansly.com", "fanvue.com"],
-  "Link-in-Bio Platforms": [
-    "linktr.ee",
-    "allmylinks.com",
-    "beacons.ai",
-    "hoo.be",
-    "link.me",
-    "juicy.bio",
-    "bink.bio"
-  ],
-  "Social Platforms": ["instagram.com", "tiktok.com", "reddit.com", "x.com", "youtube.com"],
-  "Competitor Agencies": [],
-  Other: []
-};
-
 async function main() {
-  for (const [categoryName, domains] of Object.entries(categoryDomains)) {
+  for (const { name: categoryName, domains } of seededCategoryDomains) {
     const category = await prisma.domainCategory.upsert({
       where: { slug: toSlug(categoryName) },
       create: { name: categoryName, slug: toSlug(categoryName) },
       update: { name: categoryName }
     });
 
-    for (const domain of domains) {
+    for (const input of domains) {
+      const domain = normalizeDomain(input);
       const trackedDomain = await prisma.trackedDomain.upsert({
         where: { domain },
         create: {
@@ -38,18 +24,14 @@ async function main() {
         update: {}
       });
 
-      await prisma.domainCategoryAssignment.upsert({
-        where: {
-          trackedDomainId_domainCategoryId: {
-            trackedDomainId: trackedDomain.id,
-            domainCategoryId: category.id
-          }
-        },
-        create: {
+      await prisma.domainCategoryAssignment.deleteMany({
+        where: { trackedDomainId: trackedDomain.id }
+      });
+      await prisma.domainCategoryAssignment.create({
+        data: {
           trackedDomainId: trackedDomain.id,
           domainCategoryId: category.id
-        },
-        update: {}
+        }
       });
     }
   }

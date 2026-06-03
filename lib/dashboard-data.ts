@@ -1,9 +1,13 @@
 import { notFound } from "next/navigation";
 import { describeGoogleTrendsMode } from "@/providers/google-trends";
 import { similarwebPublicProvider } from "@/providers/similarweb-public";
+import { UNCATEGORIZED_CATEGORY_FILTER } from "@/lib/categories";
+import { getDisplayNameFromDomain } from "@/lib/domains";
 import { calculateRankChange, calculateTrafficChange, freshnessLabel } from "@/lib/metrics";
 import { env, getPublicEnvStatus, hasDatabaseUrl } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
+import { seededCategoryDomains } from "@/lib/tracked-catalog";
+import { toSlug } from "@/lib/utils";
 
 const sampleSnapshots = [
   {
@@ -51,69 +55,82 @@ const sampleSnapshots = [
   }
 ];
 
-const sampleDomains: any[] = [
-  {
-    id: "sample-onlyfans",
-    domain: "onlyfans.com",
-    displayName: "Onlyfans",
-    isActive: true,
-    notes: "Seed sample",
-    categoryAssignments: [{ category: { id: "cat-creator", name: "Creator Monetization Platforms", slug: "creator-monetization-platforms" } }],
-    snapshots: sampleSnapshots
-  },
-  {
-    id: "sample-linktree",
-    domain: "linktr.ee",
-    displayName: "Linktree",
-    isActive: true,
-    notes: "Seed sample",
-    categoryAssignments: [{ category: { id: "cat-bio", name: "Link-in-Bio Platforms", slug: "link-in-bio-platforms" } }],
-    snapshots: [
-      {
-        ...sampleSnapshots[0],
-        id: "sample-l1",
-        estimatedMonthlyVisits: 86000000,
-        globalRank: 350,
-        status: "partial",
-        warningsJson: ["Country shares were not public in static HTML."],
-        trafficChannelSnapshots: [{ channel: "organic_search", sharePercent: 46.8 }]
-      },
-      {
-        ...sampleSnapshots[1],
-        id: "sample-l0",
-        estimatedMonthlyVisits: 90000000,
-        globalRank: 340
-      }
-    ]
-  },
-  {
-    id: "sample-fansly",
-    domain: "fansly.com",
-    displayName: "Fansly",
-    isActive: true,
-    notes: "Seed sample",
-    categoryAssignments: [{ category: { id: "cat-creator", name: "Creator Monetization Platforms", slug: "creator-monetization-platforms" } }],
-    snapshots: [
-      {
-        ...sampleSnapshots[0],
-        id: "sample-f1",
-        status: "no_public_data",
-        estimatedMonthlyVisits: null,
-        globalRank: null,
-        warningsJson: ["No public metric values were found in static HTML."],
-        trafficChannelSnapshots: []
-      }
-    ]
-  }
-];
+const sampleSnapshotsByDomain: Record<string, any[]> = {
+  "onlyfans.com": sampleSnapshots,
+  "linktr.ee": [
+    {
+      ...sampleSnapshots[0],
+      id: "sample-l1",
+      estimatedMonthlyVisits: 86000000,
+      globalRank: 350,
+      status: "partial",
+      warningsJson: ["Country shares were not public in static HTML."],
+      trafficChannelSnapshots: [{ channel: "organic_search", sharePercent: 46.8 }]
+    },
+    {
+      ...sampleSnapshots[1],
+      id: "sample-l0",
+      estimatedMonthlyVisits: 90000000,
+      globalRank: 340
+    }
+  ],
+  "fansly.com": [
+    {
+      ...sampleSnapshots[0],
+      id: "sample-f1",
+      status: "no_public_data",
+      estimatedMonthlyVisits: null,
+      globalRank: null,
+      warningsJson: ["No public metric values were found in static HTML."],
+      trafficChannelSnapshots: []
+    }
+  ]
+};
 
-const sampleCategories: any[] = [
-  { id: "cat-creator", name: "Creator Monetization Platforms", slug: "creator-monetization-platforms", _count: { assignments: 2 } },
-  { id: "cat-bio", name: "Link-in-Bio Platforms", slug: "link-in-bio-platforms", _count: { assignments: 1 } },
-  { id: "cat-social", name: "Social Platforms", slug: "social-platforms", _count: { assignments: 0 } },
-  { id: "cat-agencies", name: "Competitor Agencies", slug: "competitor-agencies", _count: { assignments: 0 } },
-  { id: "cat-other", name: "Other", slug: "other", _count: { assignments: 0 } }
-];
+function sampleCategoryId(name: string) {
+  return `cat-${toSlug(name)}`;
+}
+
+const sampleCategoriesByName = new Map(
+  seededCategoryDomains.map(({ name }) => [
+    name,
+    {
+      id: sampleCategoryId(name),
+      name,
+      slug: toSlug(name),
+      _count: { assignments: 0 }
+    }
+  ])
+);
+
+const sampleDomainCategories = new Map<string, any>();
+
+for (const { name, domains } of seededCategoryDomains) {
+  const category = sampleCategoriesByName.get(name);
+  if (!category) continue;
+  for (const domain of domains) {
+    sampleDomainCategories.set(domain, category);
+  }
+}
+
+const sampleCategories: any[] = [...sampleCategoriesByName.values()].map((category) => ({
+  ...category,
+  _count: {
+    assignments: [...sampleDomainCategories.values()].filter((assignedCategory) => assignedCategory.id === category.id).length
+  }
+}));
+
+const sampleDomains: any[] = [...sampleDomainCategories.entries()]
+  .sort(([domainA], [domainB]) => domainA.localeCompare(domainB))
+  .map(([domain, category]) => ({
+    id: `sample-${toSlug(domain)}`,
+    domain,
+    displayName: getDisplayNameFromDomain(domain),
+    isActive: true,
+    notes: "Seed sample",
+    categoryAssignments: [{ category }],
+    snapshots: sampleSnapshotsByDomain[domain] ?? []
+  }));
 
 async function dbOrSample<T>(sample: T, fn: () => Promise<unknown>): Promise<T> {
   if (!hasDatabaseUrl()) return sample;
@@ -133,6 +150,7 @@ function domainCategory(domain: any) {
 }
 
 function mapDomainRow(domain: any) {
+  const categories = (domain.categoryAssignments ?? []).map((assignment: any) => assignment.category).filter(Boolean);
   const snapshots = [...(domain.snapshots ?? [])].sort(
     (a, b) => new Date(b.collectedAt).getTime() - new Date(a.collectedAt).getTime()
   );
@@ -154,7 +172,8 @@ function mapDomainRow(domain: any) {
     isActive: domain.isActive,
     notes: domain.notes ?? "",
     category: domainCategory(domain),
-    categoryId: domain.categoryAssignments?.[0]?.category?.id ?? "",
+    categoryId: categories[0]?.id ?? "",
+    categoryIds: categories.map((category: any) => category.id),
     latest,
     previous,
     absoluteVisitChange: trafficChange.absoluteVisitChange,
@@ -193,16 +212,39 @@ async function loadDomains() {
   );
 }
 
-export async function getOverviewData() {
-  const domains = await loadDomains();
+async function loadCategories() {
+  return dbOrSample(sampleCategories, () =>
+    prisma.domainCategory.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { assignments: true } } } })
+  );
+}
+
+function normalizeOverviewCategoryFilter(categoryFilter: string | null | undefined, categories: any[]) {
+  const value = categoryFilter?.trim() ?? "";
+  if (!value) return "";
+  if (value === UNCATEGORIZED_CATEGORY_FILTER) return value;
+  return categories.some((category) => category.id === value) ? value : "";
+}
+
+function filterRowsByCategory(rows: ReturnType<typeof mapDomainRow>[], categoryFilter: string) {
+  if (!categoryFilter) return rows;
+  if (categoryFilter === UNCATEGORIZED_CATEGORY_FILTER) {
+    return rows.filter((row) => row.categoryIds.length === 0);
+  }
+  return rows.filter((row) => row.categoryIds.includes(categoryFilter));
+}
+
+export async function getOverviewData(categoryFilter?: string | null) {
+  const [domains, categories] = await Promise.all([loadDomains(), loadCategories()]);
   const rows = domains.map(mapDomainRow);
-  const latestStatuses = rows.map((row) => row.latest?.status).filter(Boolean);
+  const selectedCategoryId = normalizeOverviewCategoryFilter(categoryFilter, categories);
+  const filteredRows = filterRowsByCategory(rows, selectedCategoryId);
+  const latestStatuses = filteredRows.map((row) => row.latest?.status).filter(Boolean);
   const latestRun = await dbOrSample(null as any, () =>
     prisma.scrapeRun.findFirst({ orderBy: { startedAt: "desc" }, include: { items: true } })
   );
   return {
     cards: {
-      trackedWebsites: rows.length,
+      trackedWebsites: filteredRows.length,
       latestSuccessfulSnapshots: latestStatuses.filter((status) => status === "success").length,
       partialData: latestStatuses.filter((status) => status === "partial").length,
       noPublicData: latestStatuses.filter((status) => status === "no_public_data").length,
@@ -211,16 +253,17 @@ export async function getOverviewData() {
       ).length,
       latestRun
     },
-    rows
+    categories,
+    selectedCategoryId,
+    totalRows: rows.length,
+    rows: filteredRows
   };
 }
 
 export async function getDomainsPageData() {
   const [domains, categories] = await Promise.all([
     loadDomains(),
-    dbOrSample(sampleCategories, () =>
-      prisma.domainCategory.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { assignments: true } } } })
-    )
+    loadCategories()
   ]);
   return { domains: domains.map(mapDomainRow), categories };
 }
@@ -241,9 +284,7 @@ export async function getDomainDetailData(id: string) {
 }
 
 export async function getCategoriesData() {
-  return dbOrSample(sampleCategories, () =>
-    prisma.domainCategory.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { assignments: true } } } })
-  );
+  return loadCategories();
 }
 
 export async function getComparisonData(selectedIds: string[] = []) {
