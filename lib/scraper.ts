@@ -9,11 +9,12 @@ import { sendTelegramMessage } from "@/lib/telegram";
 import { evaluateAlertsForSnapshot } from "@/lib/alerts";
 
 const terminalFailureStatuses = new Set(["blocked", "captcha", "login_wall", "parser_error", "network_error"]);
+const SIMILARWEB_PUBLIC_MIN_DELAY_MS = 45_000;
 
-export function delayForRequest(index: number) {
+export function delayForRequest(index: number, minimumDelayMs = 0) {
   if (index === 0) return 0;
   const jitter = env.requestJitterMs > 0 ? Math.floor(Math.random() * env.requestJitterMs) : 0;
-  return env.requestDelayMs + jitter;
+  return Math.max(env.requestDelayMs, minimumDelayMs) + jitter;
 }
 
 export function shouldSkipDuplicateSnapshot(input: { existingSnapshotId?: string | null; force?: boolean }) {
@@ -227,9 +228,10 @@ export async function scrapeAllTrackedDomains(input: {
     data: { status: "running", domainsAttempted: domains.length }
   });
   const counts = { domainsSucceeded: 0, domainsPartial: 0, domainsBlocked: 0, domainsFailed: 0 };
+  const minimumDelayMs = provider.name === similarwebPublicProvider.name ? SIMILARWEB_PUBLIC_MIN_DELAY_MS : 0;
 
   for (const [index, domain] of domains.entries()) {
-    await sleep(delayForRequest(index));
+    await sleep(delayForRequest(index, minimumDelayMs));
     const status = await scrapeDomainInRun({
       runId: run.id,
       trackedDomainId: domain.id,
